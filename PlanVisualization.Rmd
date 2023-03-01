@@ -1,0 +1,118 @@
+---
+title: "PlanVisualization"
+author: "Adam Bajo-Walker"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r Setup, include = TRUE, warning = FALSE, message = FALSE}
+
+library(tidyverse)
+library(sf)
+library(inlmisc)
+library(leaflet)
+library(leaflet.extras)
+library(readxl)
+library(viridis)
+
+# only need this package if you are trying to connect to pinned data
+library(pins)
+```
+
+This chunk will connect you to the DEQ R server to find pinned data. You will have to make sure you have a config file (with API server credentials) and is in the current working directory. You will also have to make sure you are routing through a secured DEQ network. If you do not have an API key and cannot connect to the server (or are not on a secure DEQ network/VPN) proceed to the next chunk. 
+
+Another thing to keep in mind, the package 'pins' and the associated code below that accesses data through pins will not work unless you are using R version 3.6.2. All chunks below should work with different versions of R.
+
+```{r Connect to Server, include = TRUE, warning = FALSE, message = FALSE}
+# get configuration settings
+conn <- config::get(file = 'PINSconfig.yml',
+                    "connectionSettings")
+
+# use API key to register board
+board_register_rsconnect(key = conn$CONNECT_API_KEY,
+                         server = conn$CONNECT_SERVER)
+
+# viewing what pinned data are available 
+pin_find(board = 'rsconnect') %>% 
+  View()
+
+# pulling station information
+stations <- pin_get('ejones/WQM-Stations-Spatial', board = 'rsconnect')
+
+# Water quality standards
+WQS <- pin_get('ejones/WQSlookup-withStandards', board = 'rsconnect')
+
+# filtering by BRRO stations; you can filter the stations data by any column but we are interested in stations that are only within the Blue Ridge Region
+BRROstations <- filter(stations, ASSESS_REG == 'BRRO')
+
+# all we are doing here is combining the Blue Ridge station info with the water quality standard info; this code combines the two data sets by using 'StationID' as the column to reference the two data sets
+BRROstationsWQS <- left_join(BRROstations, WQS, by = 'StationID')
+
+# how many BRRO stations have WQS attributed to them? More-or-less, how many stations don't have water quality data?
+filter(BRROstationsWQS, !is.na(WQS_ID)) %>% 
+  nrow()
+
+# Lets save this data as .csv files so we can use it freely down the line
+write.csv(BRROstations, 'Data/BRROstations.csv', na = '')
+write.csv(stations, "Data/Stations.csv", na = '')
+
+# We will also need the Virginia 6-digit HUC spatial layer to help with visuals
+vahu6 <- st_as_sf(pin_get('ejones/vahu6', board = 'rsconnect'))
+```
+
+
+So, lets pull in the 2023-2024 sites we have identified for runs this year!
+Remember to read in the correct excel file and the correct sheet! This code will leave out all of the other sheets within our excel file.
+
+Keep in mind; this excel file was built using our (i.e., BRRO) traditional way of building monitoring plans: identifying sites for the year to be sampled for HF bacteria, AW, Trend, Lakes, PFAS, etc. So you should have your own file with sites you have identified to be sampled for the year. You will have to alter this code based on your files and associated column headers. 
+
+```{r Pull in Working Data, include = TRUE, warning = FALSE, message = FALSE}
+BRROsites23 <- read_excel('Data/BRRO_Monitoring_Plan_2023.xlsx',
+                          sheet = 'Runs.23-24')
+
+BRROsites23 <- BRROsites23 %>% 
+  rename("2023" = "x2023",
+         "2024" = "x2024",
+         "Code" = "Prog Code")
+
+# We have some rows of random numbers because of some calculations we were doing before
+#     We can remove those rows with the following:
+
+BRROsites23 <- BRROsites23[-c(175:190),]
+```
+
+Above, we had you pull station information from pinned data. If you were unable to do so, you will have to check out the 'Stations.csv' in the data folder to figure out what stations you will need. This file contains all stations for Virginia in CEDS, so it is a beast of a file!
+
+```{r Pull in Stations, include = TRUE, warning = FALSE, message = FALSE}
+# for example, if we want to filter the file for just the Piedmont Region we would filter using;
+PROstations <- read.csv('Data/Stations.csv')%>%
+  filter(ASSESS_REG == 'PRO')
+```
+
+And again, we had you pull in the Virginia 6-digit HUC spatial layer from pinned data, if you are unable to do so, you will have to read it in from the data folder.
+
+```{r Pull in Watersheds, include = TRUE, warning = FALSE, message = FALSE}
+vahu6 <- read_sf("Data/vahu6.shp")
+```
+
+Now we can begin to make our maps!
+
+First things first, lets make a leaflet map with just our 6-digit HUC boundaries! It is a pretty decent sized shape-file, so it may take a minute to load!
+
+```{r First Map, include = TRUE, warning = FALSE, message = FALSE}
+CreateWebMap(maps = c("Topo","Imagery"), collapsed = TRUE) %>%
+  addPolygons(data = vahu6,
+              fillColor = 'blue', 
+              opacity = 0.5, 
+              weight = 1.5,
+              layerId = ~VAHU6, 
+              label = ~VAHU6, 
+              group = 'Assessment Watersheds') %>% 
+  addLayersControl(baseGroups=c("Topo",'Imagery'),
+                   overlayGroups = c('Assessment Watersheds'),
+                   options=layersControlOptions(collapsed=T),
+                   position='topleft')
+```
+
+
+
