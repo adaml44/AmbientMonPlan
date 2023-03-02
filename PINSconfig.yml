@@ -1,4 +1,0 @@
-default:
-  connectionSettings:
-    CONNECT_API_KEY: 'fflimmeIZwMKRzXEx3mhXNylqjaQf5Ra'
-    CONNECT_SERVER: 'https://rconnect.deq.virginia.gov'
