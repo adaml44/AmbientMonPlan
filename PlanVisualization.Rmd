@@ -115,4 +115,227 @@ CreateWebMap(maps = c("Topo","Imagery"), collapsed = TRUE) %>%
 ```
 
 
+We can start to add a few things to this but also filtering to keep the size of the plot down. For us, we have different types of sites that we wanted to color code so I created a simple object called 'Stats' to house a list of colors to use. 
 
+```{r}
+Stats <- colorFactor(
+  palette = viridis_pal(begin = 0.2, end = 0.90, option = 'H')(5),
+  domain = BRROsites23$Code
+)
+
+CreateWebMap(maps = c("Topo", "Imagery"), collapsed = TRUE) %>%
+  addPolygons(data = vahu6 %>% filter(ASSESS_REG == 'BRRO'), 
+              color = 'blue',
+              weight = 1.5,
+              opacity = 0.5,
+              highlightOptions = highlightOptions(color = "#FFF1BE",
+                                                  weight = 5,
+                                                  opacity = 1.0),
+              layerId = ~VAHU6,
+              label = ~VAHU6,
+              group = 'Assessment Watersheds')%>%
+  addCircleMarkers(data = BRROsites23,
+                   stroke = F,
+                   radius = 8,
+                   fillColor = ~Stats(Code),
+                   fillOpacity = 1,
+                   layerId = ~`2023`,
+                   label = ~`2023`,
+                   group = 'Stations')%>%
+  addLayersControl(baseGroups = c("Topo", "Imagery"),
+                   overlayGroups = c('Assessment Watersheds', 'Stations'),
+                   options = layersControlOptions(collapsed = T),
+                   position = 'topleft')%>%
+  addLegend(data = BRROsites23,
+            pal = Stats,
+            values = ~Code,
+            title = "Ambient Run Code",
+            opacity = 1)%>%
+  inlmisc::AddSearchButton(group = "Stations", zoom = 15,
+                           textPlaceholder = "Search stations")
+
+
+```
+
+So we now have our 2023 stations within our BRRO assessment region, lets create polygons based on our "runs" we have outlined in our monitoring plan.
+
+```{r}
+# changing our 2023 data table into a simple features table to create "geometries" from
+BRROsites23 <- st_as_sf(BRROsites23, coords = c("Longitude", "Latitude"))
+
+# All this code is doing is condensing our 2023 data table (which is now an sf object) into each run
+#Should now have a single row for each run where all of our sites are condensed into the geometry column, if you plot 'BRRO23' you will get a whole bunch of points color-coded by run
+
+# !!!!THIS IS A VERY DIRTY WAY OF CREATING POLYGONS FROM POINT DATA, I WOULD ADIVSE AGAINST USING THE 'BRRO23' DATAFRAME TO PLOT POINTS USEFULLY ON A MAP !!!!
+BRRO23 = st_sf(
+  aggregate(
+    BRROsites23,
+    by = list(ID = BRROsites23$Run),
+    FUN = function(vals){vals[1]}
+  )
+)
+
+# Take a look at how the "geometry" column plots
+plot(BRRO23['ID'])
+
+# Lets create a new SF object to create our actual polygons from
+BRRORun23 <- BRRO23
+
+# this code will change the geometry column from points to actual polygons
+# st_convex_hull will join the points into the smallest geometry polygon
+st_geometry(BRRORun23) <- st_convex_hull(BRRORun23$geometry)
+
+# Lets plot it to see if the polygons make sense
+plot(BRRORun23['ID'])
+
+
+# we have 20 polygons here which matches up with our runs pretty well
+# keep in mind BBAY23 contains only a single site and will not return a polygon in this instance so we can remove that row with the following:
+BRRORun23 <- BRRORun23[-c(2),]
+
+
+```
+
+Lets make another map!
+
+This time, we are going to take the previous map we made but add in the "runs" we have by plotting the polygons from the last step. 
+
+```{r}
+Stats <- colorFactor(
+  palette = viridis_pal(begin = 0.2, end = 0.90, option = 'H')(5),
+  domain = BRROsites23$Code
+)
+
+CreateWebMap(maps = c("Topo", "Imagery"), collapsed = TRUE) %>%
+  addPolygons(data = vahu6 %>% filter(ASSESS_REG == 'BRRO'), 
+              color = 'blue',
+              weight = 1.5,
+              opacity = 0.5,
+              highlightOptions = highlightOptions(color = "#FFF1BE",
+                                                  weight = 5,
+                                                  opacity = 1.0),
+              layerId = ~VAHU6,
+              label = ~VAHU6,
+              group = 'Assessment Watersheds')%>%
+  addPolygons(data = BRRORun23,
+              color = 'grey',
+              weight = 1.5,
+              opacity = 1.0,
+              fillColor = ~BRRORun23$Color,
+              fillOpacity = 0.6,
+              highlightOptions = highlightOptions(color = "#FFF1BE",
+                                                  weight = 5,
+                                                  opacity = 1.0),
+              layerId = ~ID,
+              label = ~ID,
+              group = 'BRRO Runs 2023')%>%
+  addCircleMarkers(data = BRROsites23,
+                   stroke = F,
+                   radius = 8,
+                   fillColor = ~Stats(Code),
+                   fillOpacity = 1,
+                   layerId = ~`2023`,
+                   label = ~`2023`,
+                   group = 'Stations')%>%
+  addLayersControl(baseGroups = c("Topo", "Imagery"),
+                   overlayGroups = c('Assessment Watersheds','BRRO Runs 2023',
+                                     'Stations'),
+                   options = layersControlOptions(collapsed = T),
+                   position = 'topleft')%>%
+  addLegend(data = BRROsites23,
+            pal = Stats,
+            values = ~Code,
+            title = "Ambient Run Code",
+            opacity = 1)%>%
+  inlmisc::AddSearchButton(group = "Stations", zoom = 15,
+                           textPlaceholder = "Search stations")
+
+
+```
+From here we can start to add in other types of field work like High Frequency Bacteria (HFB), or Lake runs 
+
+```{r}
+BRROHF23 <- read_excel('Data/BRRO_Monitoring_Plan_2023.xlsx', sheet = 'HFB.23')
+
+Lakes23 <- read_excel('Data/BRRO_Monitoring_Plan_2023.xlsx', sheet = 'Lakes.23-24')
+
+Lakes23 <- Lakes23[-c(51:60),]
+```
+
+Now we can combine everything together!
+
+```{r}
+Stats <- colorFactor(
+  palette = viridis_pal(begin = 0.2, end = 0.90, option = 'H')(5),
+  domain = BRROsites23$Code
+)
+
+CreateWebMap(maps = c("Topo", "Imagery"), collapsed = TRUE) %>%
+  addPolygons(data = vahu6 %>% filter(ASSESS_REG == 'BRRO'), 
+              color = 'blue',
+              weight = 1.5,
+              opacity = 0.5,
+              highlightOptions = highlightOptions(color = "#FFF1BE",
+                                                  weight = 5,
+                                                  opacity = 1.0),
+              layerId = ~VAHU6,
+              label = ~VAHU6,
+              group = 'Assessment Watersheds',
+              popup = paste0(vahu6$VAHU6,
+                             "<hr>",
+                             vahu6$VaName,
+                             "<br>",
+                             vahu6$Basin))%>%
+  addPolygons(data = BRRORun23,
+              color = 'grey',
+              weight = 1.5,
+              opacity = 1.0,
+              fillColor = ~BRRORun23$Color,
+              fillOpacity = 0.6,
+              highlightOptions = highlightOptions(color = "#FFF1BE",
+                                                  weight = 5,
+                                                  opacity = 1.0),
+              layerId = ~ID,
+              label = ~ID,
+              group = 'BRRO Runs 2023',
+              popup = paste0("<b>",
+                             BRRORun23$ID))%>%
+  addCircleMarkers(data = BRROsites23,
+                   stroke = F,
+                   radius = 8,
+                   fillColor = ~Stats(Code),
+                   fillOpacity = 1,
+                   layerId = ~`2023`,
+                   label = ~`2023`,
+                   group = 'Stations')%>%
+  addCircleMarkers(data = BRROHF23,
+                   stroke = F,
+                   radius = 8,
+                   fillColor = ~BRROHF23$Color,
+                   fillOpacity = 1.0,
+                   layerId = ~StationID,
+                   label = ~StationID,
+                   group = 'HF Bacteria')%>%
+  addMarkers(data = Lakes23,
+             layerId = ~Station,
+             label = ~Station,
+             group = 'Lake Stations')%>%
+  addLayersControl(baseGroups = c("Topo", "Imagery"),
+                   overlayGroups = c('Assessment Watersheds','BRRO Runs 2023',
+                                     'HF Bacteria','Lake Stations','Stations'),
+                   options = layersControlOptions(collapsed = T),
+                   position = 'topleft')%>%
+  hideGroup('Assessment Watersheds')%>%
+  hideGroup('HF Bacteria')%>%
+  hideGroup('Lake Stations')%>%
+  addLegend(data = BRROsites23,
+            pal = Stats,
+            values = ~Code,
+            title = "Ambient Run Code",
+            opacity = 1)%>%
+  inlmisc::AddSearchButton(group = "Stations", zoom = 15,
+                           textPlaceholder = "Search stations")
+
+```
+
+Disclaimer: Just realized that the assessment watershed pop-ups are not registering the correct information. I am working on figuring out why that is but defintiely confirm watershed information before making desicions or formal figures.
