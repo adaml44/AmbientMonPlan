@@ -269,9 +269,10 @@ Stats <- colorFactor(
   palette = viridis_pal(begin = 0.2, end = 0.90, option = 'H')(5),
   domain = BRROsites23$Code
 )
+z <- vahu6 %>% filter(ASSESS_REG == 'BRRO')
 
 CreateWebMap(maps = c("Topo", "Imagery"), collapsed = TRUE) %>%
-  addPolygons(data = vahu6 %>% filter(ASSESS_REG == 'BRRO'), 
+  addPolygons(data = z, 
               color = 'blue',
               weight = 1.5,
               opacity = 0.5,
@@ -281,11 +282,11 @@ CreateWebMap(maps = c("Topo", "Imagery"), collapsed = TRUE) %>%
               layerId = ~VAHU6,
               label = ~VAHU6,
               group = 'Assessment Watersheds',
-              popup = paste0(vahu6$VAHU6,
+              popup = paste0(z$VAHU6,
                              "<hr>",
-                             vahu6$VaName,
+                             z$VaName,
                              "<br>",
-                             vahu6$Basin))%>%
+                             z$Basin))%>%
   addPolygons(data = BRRORun23,
               color = 'grey',
               weight = 1.5,
